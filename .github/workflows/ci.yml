@@ -1,0 +1,8 @@
+name: CI on Push
+
+on:
+    push:
+
+jobs:
+    call-reusable:
+        uses: hortonew/cicd_reusable/.github/workflows/reusable_a.yml@main
