@@ -1,0 +1,24 @@
+name: Build OS and Toolchain Combinations
+
+on:
+    workflow_dispatch:
+
+jobs:
+    build:
+        runs-on: ${{ matrix.os }} # x2
+        strategy:
+            fail-fast: false
+            matrix:
+                os: [ubuntu-22.04, ubuntu-24.04]
+                toolchain: [stable, beta, nightly]
+        steps:
+            - name: Install Rust ${{ matrix.toolchain }}
+              uses: dtolnay/rust-toolchain@v1
+              with:
+                  toolchain: ${{ matrix.toolchain }} # x3
+
+            - name: Build and test a sample project
+              run: |
+                  cargo new example
+                  cd example
+                  cargo run
