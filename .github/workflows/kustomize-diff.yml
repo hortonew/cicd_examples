@@ -1,0 +1,140 @@
+name: Kustomize Diff
+
+on:
+    pull_request:
+        branches: [main]
+        paths:
+            - "configs/k8s/kustomize/**"
+
+jobs:
+    detect-changes:
+        name: Detect Changed Environments
+        runs-on: ubuntu-latest
+        outputs:
+            environments: ${{ steps.detect.outputs.environments }}
+        steps:
+            - name: Checkout PR branch
+              uses: actions/checkout@v6
+              with:
+                  fetch-depth: 0
+
+            - name: Detect which environments changed
+              id: detect
+              run: |
+                  CHANGED_FILES=$(git diff --name-only origin/main...HEAD -- configs/k8s/kustomize/)
+                  echo "Changed files:"
+                  echo "$CHANGED_FILES"
+
+                  # Get all environment names from overlays folder
+                  ALL_ENVS=$(ls -1 configs/k8s/kustomize/overlays/ | xargs)
+                  echo "Available environments: $ALL_ENVS"
+
+                  ENVS=""
+
+                  # If base changed, all environments are affected
+                  if echo "$CHANGED_FILES" | grep -q "configs/k8s/kustomize/base/"; then
+                    ENVS="$ALL_ENVS"
+                  else
+                    # Check each overlay dynamically
+                    for env in $ALL_ENVS; do
+                      if echo "$CHANGED_FILES" | grep -q "configs/k8s/kustomize/overlays/$env/"; then
+                        ENVS="$ENVS $env"
+                      fi
+                    done
+                  fi
+
+                  ENVS=$(echo "$ENVS" | xargs)
+                  echo "Environments to diff: $ENVS"
+                  echo "environments=$ENVS" >> $GITHUB_OUTPUT
+
+    diff:
+        name: Kustomize Diff
+        runs-on: ubuntu-latest
+        needs: detect-changes
+        if: needs.detect-changes.outputs.environments != ''
+        permissions:
+            pull-requests: write
+        steps:
+            - name: Checkout PR branch
+              uses: actions/checkout@v6
+              with:
+                  path: pr
+
+            - name: Checkout main branch
+              uses: actions/checkout@v6
+              with:
+                  ref: main
+                  path: main
+
+            - name: Generate diffs
+              id: diff
+              run: |
+                  ENVS="${{ needs.detect-changes.outputs.environments }}"
+                  DIFF=""
+
+                  for env in $ENVS; do
+                    echo "Diffing $env..."
+                    MAIN_OUTPUT=$(kubectl kustomize main/configs/k8s/kustomize/overlays/$env 2>&1 || echo "Error building main")
+                    PR_OUTPUT=$(kubectl kustomize pr/configs/k8s/kustomize/overlays/$env 2>&1 || echo "Error building PR")
+                    
+                    ENV_DIFF=$(diff -u <(echo "$MAIN_OUTPUT") <(echo "$PR_OUTPUT") || true)
+                    
+                    if [ -n "$ENV_DIFF" ]; then
+                      DIFF="$DIFF
+                  ### $env
+                  \`\`\`diff
+                  $ENV_DIFF
+                  \`\`\`
+                  "
+                    else
+                      DIFF="$DIFF
+                  ### $env
+                  No changes
+                  "
+                    fi
+                  done
+
+                  # Write to file for the comment step
+                  echo "$DIFF" > diff_output.md
+
+            - name: Comment on PR
+              uses: actions/github-script@v8
+              with:
+                  script: |
+                      const fs = require('fs');
+                      const diff = fs.readFileSync('diff_output.md', 'utf8');
+                      const envs = '${{ needs.detect-changes.outputs.environments }}'.split(' ').join(', ');
+
+                      const body = `## Kustomize Diff
+
+                      Environments affected: \`${envs}\`
+
+                      ${diff}
+                      `;
+
+                      // Find existing comment
+                      const { data: comments } = await github.rest.issues.listComments({
+                        owner: context.repo.owner,
+                        repo: context.repo.repo,
+                        issue_number: context.issue.number,
+                      });
+
+                      const botComment = comments.find(c => 
+                        c.user.type === 'Bot' && c.body.includes('## Kustomize Diff')
+                      );
+
+                      if (botComment) {
+                        await github.rest.issues.updateComment({
+                          owner: context.repo.owner,
+                          repo: context.repo.repo,
+                          comment_id: botComment.id,
+                          body: body
+                        });
+                      } else {
+                        await github.rest.issues.createComment({
+                          owner: context.repo.owner,
+                          repo: context.repo.repo,
+                          issue_number: context.issue.number,
+                          body: body
+                        });
+                      }
