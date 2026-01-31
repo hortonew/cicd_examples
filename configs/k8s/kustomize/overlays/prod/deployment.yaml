@@ -1,12 +1,12 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: nginx
+  name: nginx-two
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: nginx
+      app: nginx-two
   template:
     metadata:
       labels:
@@ -31,10 +31,10 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: nginx
+  name: nginx-two
 spec:
   selector:
-    app: nginx
+    app: nginx-two
   ports:
   - port: 80
     targetPort: 80
