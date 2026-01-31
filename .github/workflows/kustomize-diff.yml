@@ -28,8 +28,8 @@ jobs:
             - name: Detect which environments changed
               id: detect
               run: |
-                  chmod +x .github/scripts/detect-changes.sh
-                  .github/scripts/detect-changes.sh configs/k8s/kustomize
+                  chmod +x .github/scripts/kustomize-detect-changes.sh
+                  .github/scripts/kustomize-detect-changes.sh configs/k8s/kustomize
 
     diff:
         name: Kustomize Diff
@@ -68,8 +68,8 @@ jobs:
               if: env.ENABLE_KUBECONFORM == 'true'
               id: validate
               run: |
-                  chmod +x pr/.github/scripts/kubeconform-validate.sh
-                  pr/.github/scripts/kubeconform-validate.sh "${{ needs.detect-changes.outputs.environments }}"
+                  chmod +x pr/.github/scripts/kustomize-kubeconform-validate.sh
+                  pr/.github/scripts/kustomize-kubeconform-validate.sh "${{ needs.detect-changes.outputs.environments }}"
 
             - name: Generate diffs
               id: diff
@@ -81,7 +81,7 @@ jobs:
               uses: actions/github-script@v8
               with:
                   script: |
-                      const script = require('./pr/.github/scripts/comment-on-pr.js')
+                      const script = require('./pr/.github/scripts/kustomize-comment-on-pr.js')
                       await script({
                         github,
                         context,
