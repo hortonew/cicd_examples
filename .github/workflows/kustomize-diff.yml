@@ -77,7 +77,7 @@ jobs:
                     MAIN_OUTPUT=$(kubectl kustomize main/configs/k8s/kustomize/overlays/$env 2>&1 || echo "Error building main")
                     PR_OUTPUT=$(kubectl kustomize pr/configs/k8s/kustomize/overlays/$env 2>&1 || echo "Error building PR")
                     
-                    ENV_DIFF=$(diff -u <(echo "$MAIN_OUTPUT") <(echo "$PR_OUTPUT") || true)
+                    ENV_DIFF=$(diff -u --label main --label pr <(echo "$MAIN_OUTPUT") <(echo "$PR_OUTPUT") || true)
                     
                     if [ -n "$ENV_DIFF" ]; then
                       DIFF="$DIFF
