@@ -80,16 +80,25 @@ jobs:
                     ENV_DIFF=$(diff -u --label main --label pr <(echo "$MAIN_OUTPUT") <(echo "$PR_OUTPUT") || true)
                     
                     if [ -n "$ENV_DIFF" ]; then
+                      LINE_COUNT=$(echo "$ENV_DIFF" | wc -l)
                       DIFF="$DIFF
-                  ### $env
+                  <details>
+                  <summary><strong>$env</strong> ($LINE_COUNT lines changed)</summary>
+
                   \`\`\`diff
                   $ENV_DIFF
                   \`\`\`
+
+                  </details>
                   "
                     else
                       DIFF="$DIFF
-                  ### $env
-                  No changes
+                  <details>
+                  <summary><strong>$env</strong> (no changes)</summary>
+
+                  No changes detected.
+
+                  </details>
                   "
                     fi
                   done
