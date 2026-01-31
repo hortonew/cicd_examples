@@ -18,6 +18,7 @@ jobs:
         runs-on: ubuntu-latest
         outputs:
             environments: ${{ steps.detect.outputs.environments }}
+            changed_files: ${{ steps.detect.outputs.changed_files }}
         steps:
             - name: Checkout PR branch
               uses: actions/checkout@v6
@@ -30,6 +31,10 @@ jobs:
                   CHANGED_FILES=$(git diff --name-only origin/main...HEAD -- configs/k8s/kustomize/)
                   echo "Changed files:"
                   echo "$CHANGED_FILES"
+
+                  # Save changed files list (newline to comma)
+                  CHANGED_FILES_LIST=$(echo "$CHANGED_FILES" | tr '\n' ',' | sed 's/,$//')
+                  echo "changed_files=$CHANGED_FILES_LIST" >> $GITHUB_OUTPUT
 
                   # Get all environment names from overlays folder
                   ALL_ENVS=$(ls -1 configs/k8s/kustomize/overlays/ | xargs)
@@ -139,19 +144,57 @@ jobs:
                     MAIN_OUTPUT=$(kubectl kustomize main/configs/k8s/kustomize/overlays/$env 2>&1 || echo "Error building main")
                     PR_OUTPUT=$(kubectl kustomize pr/configs/k8s/kustomize/overlays/$env 2>&1 || echo "Error building PR")
                     
-                    ENV_DIFF=$(diff -u --label main --label pr <(echo "$MAIN_OUTPUT") <(echo "$PR_OUTPUT") || true)
-
+                    # Split into individual resources and diff each
+                    mkdir -p /tmp/main/$env /tmp/pr/$env
+                    
+                    # Split main output by resource
+                    echo "$MAIN_OUTPUT" | awk '/^---$/{n++; next} {print > "/tmp/main/'"$env"'/resource-"n".yaml"}'
+                    # Split PR output by resource
+                    echo "$PR_OUTPUT" | awk '/^---$/{n++; next} {print > "/tmp/pr/'"$env"'/resource-"n".yaml"}'
+                    
+                    ENV_DIFF=""
+                    TOTAL_ADDS=0
+                    TOTAL_DELS=0
+                    
+                    # Get all resource files
+                    for res_file in /tmp/pr/$env/resource-*.yaml; do
+                      [ -f "$res_file" ] || continue
+                      res_name=$(basename "$res_file")
+                      main_file="/tmp/main/$env/$res_name"
+                      
+                      # Extract kind and name from the resource
+                      KIND=$(grep -m1 '^kind:' "$res_file" | awk '{print $2}' || echo "Unknown")
+                      NAME=$(grep -m1 '^  name:' "$res_file" | awk '{print $2}' || echo "unknown")
+                      RESOURCE_LABEL="$KIND/$NAME"
+                      
+                      if [ -f "$main_file" ]; then
+                        RES_DIFF=$(diff -u --label "main" --label "pr" "$main_file" "$res_file" || true)
+                      else
+                        RES_DIFF=$(diff -u --label "main" --label "pr" /dev/null "$res_file" || true)
+                      fi
+                      
+                      if [ -n "$RES_DIFF" ]; then
+                        ADDS=$(echo "$RES_DIFF" | grep -cE '^\+[^+]' || true)
+                        DELS=$(echo "$RES_DIFF" | grep -cE '^-[^-]' || true)
+                        ADDS=${ADDS:-0}
+                        DELS=${DELS:-0}
+                        TOTAL_ADDS=$((TOTAL_ADDS + ADDS))
+                        TOTAL_DELS=$((TOTAL_DELS + DELS))
+                        ENV_DIFF="$ENV_DIFF
+                  #### $RESOURCE_LABEL (+$ADDS, -$DELS)
+                  \`\`\`diff
+                  $RES_DIFF
+                  \`\`\`
+                  "
+                      fi
+                    done
+                    
                     if [ -n "$ENV_DIFF" ]; then
-                      # Count additions and removals separately
-                      ADDITIONS=$(echo "$ENV_DIFF" | grep -cE '^\+[^+]' || echo 0)
-                      REMOVALS=$(echo "$ENV_DIFF" | grep -cE '^-[^-]' || echo 0)
                       DIFF="$DIFF
                   <details>
-                  <summary><strong>$env</strong> (+$ADDITIONS, -$REMOVALS)</summary>
+                  <summary><strong>$env</strong> (+$TOTAL_ADDS, -$TOTAL_DELS)</summary>
 
-                  \`\`\`diff
                   $ENV_DIFF
-                  \`\`\`
 
                   </details>
                   "
@@ -186,11 +229,16 @@ jobs:
                         validationSection = `### Validation ${validationFailed ? '❌' : '✅'}\n\n${validation}\n\n`;
                       }
 
+                      const changedFiles = '${{ needs.detect-changes.outputs.changed_files }}'.split(',').filter(f => f);
+                      const filesSection = changedFiles.length > 0 
+                        ? `### Files Changed\n\n${changedFiles.map(f => '- \`' + f + '\`').join('\n')}\n\n`
+                        : '';
+
                       const body = `## Kustomize Diff
 
                       Environments affected: \`${envs}\`
 
-                      ${validationSection}### Changes
+                      ${filesSection}${validationSection}### Changes
 
                       ${diff}
                       `;
