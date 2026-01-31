@@ -133,7 +133,8 @@ jobs:
                     ENV_DIFF=$(diff -u --label main --label pr <(echo "$MAIN_OUTPUT") <(echo "$PR_OUTPUT") || true)
 
                     if [ -n "$ENV_DIFF" ]; then
-                      LINE_COUNT=$(echo "$ENV_DIFF" | wc -l)
+                      # Count only actual changes (lines starting with + or - but not ++ or --)
+                      LINE_COUNT=$(echo "$ENV_DIFF" | grep -cE '^[+-][^+-]')
                       DIFF="$DIFF
                   <details>
                   <summary><strong>$env</strong> ($LINE_COUNT lines changed)</summary>
