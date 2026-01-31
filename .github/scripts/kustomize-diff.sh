@@ -19,30 +19,17 @@ KUSTOMIZE_PATH="${2:-configs/k8s/kustomize/overlays}"
 
 DIFF=""
 
-# Add resource marker (# Resource: Kind/Name) before each resource for diff context
-add_resource_markers() {
-    awk '
-        /^---$/ { print; next }
-        /^kind:/ { kind = $2 }
-        /^  name:/ { 
-            name = $2
-            print "# Resource: " kind "/" name
-        }
-        { print }
-    '
-}
-
 for env in $ENVS; do
     echo "Diffing $env..."
     
     MAIN_OUTPUT=$(kubectl kustomize "main/$KUSTOMIZE_PATH/$env" 2>&1 || echo "Error building main")
     PR_OUTPUT=$(kubectl kustomize "pr/$KUSTOMIZE_PATH/$env" 2>&1 || echo "Error building PR")
     
-    # Add resource markers and diff with context
-    ENV_DIFF=$(diff -u --show-function-line='^# Resource:' \
-        --label main --label pr \
-        <(echo "$MAIN_OUTPUT" | add_resource_markers) \
-        <(echo "$PR_OUTPUT" | add_resource_markers) || true)
+    # Write to temp files for git diff
+    echo "$MAIN_OUTPUT" > /tmp/main.yaml
+    echo "$PR_OUTPUT" > /tmp/pr.yaml
+    
+    ENV_DIFF=$(git diff --no-index --no-color /tmp/main.yaml /tmp/pr.yaml 2>/dev/null | tail -n +5 || true)
     
     if [ -n "$ENV_DIFF" ]; then
         # Count additions and removals
