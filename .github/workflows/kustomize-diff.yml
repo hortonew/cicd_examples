@@ -3,6 +3,7 @@ name: Kustomize Diff
 # ============ TOGGLE ============
 env:
     ENABLE_KUBECONFORM: "true" # Set to 'false' to disable validation
+    KUBECONFORM_VERSION: "0.7.0"
 # ================================
 
 on:
@@ -71,10 +72,18 @@ jobs:
                   ref: main
                   path: main
 
-            - name: Install kubeconform
+            - name: Cache kubeconform
               if: env.ENABLE_KUBECONFORM == 'true'
+              id: cache-kubeconform
+              uses: actions/cache@v5
+              with:
+                  path: /usr/local/bin/kubeconform
+                  key: kubeconform-${{ env.KUBECONFORM_VERSION }}
+
+            - name: Install kubeconform
+              if: env.ENABLE_KUBECONFORM == 'true' && steps.cache-kubeconform.outputs.cache-hit != 'true'
               run: |
-                  curl -sSL https://github.com/yannh/kubeconform/releases/latest/download/kubeconform-linux-amd64.tar.gz | tar xz
+                  curl -sSL https://github.com/yannh/kubeconform/releases/download/v${{ env.KUBECONFORM_VERSION }}/kubeconform-linux-amd64.tar.gz | tar xz
                   sudo mv kubeconform /usr/local/bin/
 
             - name: Kubeconform Validate
