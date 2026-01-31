@@ -28,35 +28,8 @@ jobs:
             - name: Detect which environments changed
               id: detect
               run: |
-                  CHANGED_FILES=$(git diff --name-only origin/main...HEAD -- configs/k8s/kustomize/)
-                  echo "Changed files:"
-                  echo "$CHANGED_FILES"
-
-                  # Save changed files list (newline to comma)
-                  CHANGED_FILES_LIST=$(echo "$CHANGED_FILES" | tr '\n' ',' | sed 's/,$//')
-                  echo "changed_files=$CHANGED_FILES_LIST" >> $GITHUB_OUTPUT
-
-                  # Get all environment names from overlays folder
-                  ALL_ENVS=$(ls -1 configs/k8s/kustomize/overlays/ | xargs)
-                  echo "Available environments: $ALL_ENVS"
-
-                  ENVS=""
-
-                  # If base changed, all environments are affected
-                  if echo "$CHANGED_FILES" | grep -q "configs/k8s/kustomize/base/"; then
-                    ENVS="$ALL_ENVS"
-                  else
-                    # Check each overlay dynamically
-                    for env in $ALL_ENVS; do
-                      if echo "$CHANGED_FILES" | grep -q "configs/k8s/kustomize/overlays/$env/"; then
-                        ENVS="$ENVS $env"
-                      fi
-                    done
-                  fi
-
-                  ENVS=$(echo "$ENVS" | xargs)
-                  echo "Environments to diff: $ENVS"
-                  echo "environments=$ENVS" >> $GITHUB_OUTPUT
+                  chmod +x .github/scripts/detect-changes.sh
+                  .github/scripts/detect-changes.sh configs/k8s/kustomize
 
     diff:
         name: Kustomize Diff
@@ -95,43 +68,8 @@ jobs:
               if: env.ENABLE_KUBECONFORM == 'true'
               id: validate
               run: |
-                  ENVS="${{ needs.detect-changes.outputs.environments }}"
-                  VALIDATION=""
-                  VALIDATION_FAILED=false
-
-                  for env in $ENVS; do
-                    echo "Validating $env..."
-                    OUTPUT=$(kubectl kustomize pr/configs/k8s/kustomize/overlays/$env | kubeconform -summary -output json 2>&1) || true
-
-                    # Check for errors (statusInvalid or invalid)
-                    if echo "$OUTPUT" | grep -qiE '"status":\s*"(invalid|statusInvalid)"'; then
-                      VALIDATION_FAILED=true
-                      VALIDATION="$VALIDATION
-                  <details>
-                  <summary>❌ <strong>$env</strong> - validation failed</summary>
-
-                  \`\`\`json
-                  $OUTPUT
-                  \`\`\`
-
-                  </details>
-                  "
-                    else
-                      VALIDATION="$VALIDATION
-                  <details>
-                  <summary>✅ <strong>$env</strong> - valid</summary>
-
-                  \`\`\`json
-                  $OUTPUT
-                  \`\`\`
-
-                  </details>
-                  "
-                    fi
-                  done
-
-                  echo "$VALIDATION" > validation_output.md
-                  echo "failed=$VALIDATION_FAILED" >> $GITHUB_OUTPUT
+                  chmod +x pr/.github/scripts/kubeconform-validate.sh
+                  pr/.github/scripts/kubeconform-validate.sh "${{ needs.detect-changes.outputs.environments }}"
 
             - name: Generate diffs
               id: diff
@@ -143,58 +81,18 @@ jobs:
               uses: actions/github-script@v8
               with:
                   script: |
-                      const fs = require('fs');
-                      const diff = fs.readFileSync('diff_output.md', 'utf8');
-                      const envs = '${{ needs.detect-changes.outputs.environments }}'.split(' ').join(', ');
-                      const kubeconformEnabled = '${{ env.ENABLE_KUBECONFORM }}' === 'true';
-
-                      let validationSection = '';
-                      if (kubeconformEnabled) {
-                        const validation = fs.readFileSync('validation_output.md', 'utf8');
-                        const validationFailed = '${{ steps.validate.outputs.failed }}' === 'true';
-                        validationSection = `### Validation ${validationFailed ? '❌' : '✅'}\n\n${validation}\n\n`;
-                      }
-
-                      const changedFiles = '${{ needs.detect-changes.outputs.changed_files }}'.split(',').filter(f => f);
-                      const filesSection = changedFiles.length > 0 
-                        ? `### Files Changed\n\n${changedFiles.map(f => '- \`' + f + '\`').join('\n')}\n\n`
-                        : '';
-
-                      const body = `## Kustomize Diff
-
-                      Environments affected: \`${envs}\`
-
-                      ${filesSection}${validationSection}### Changes
-
-                      ${diff}
-                      `;
-
-                      // Find existing comment
-                      const { data: comments } = await github.rest.issues.listComments({
-                        owner: context.repo.owner,
-                        repo: context.repo.repo,
-                        issue_number: context.issue.number,
-                      });
-
-                      const botComment = comments.find(c => 
-                        c.user.type === 'Bot' && c.body.includes('## Kustomize Diff')
-                      );
-
-                      if (botComment) {
-                        await github.rest.issues.updateComment({
-                          owner: context.repo.owner,
-                          repo: context.repo.repo,
-                          comment_id: botComment.id,
-                          body: body
-                        });
-                      } else {
-                        await github.rest.issues.createComment({
-                          owner: context.repo.owner,
-                          repo: context.repo.repo,
-                          issue_number: context.issue.number,
-                          body: body
-                        });
-                      }
+                      const script = require('./pr/.github/scripts/comment-on-pr.js')
+                      await script({
+                        github,
+                        context,
+                        core,
+                        inputs: {
+                          environments: '${{ needs.detect-changes.outputs.environments }}',
+                          changedFiles: '${{ needs.detect-changes.outputs.changed_files }}',
+                          kubeconformEnabled: '${{ env.ENABLE_KUBECONFORM }}' === 'true',
+                          validationFailed: '${{ steps.validate.outputs.failed }}' === 'true'
+                        }
+                      })
 
             - name: Fail if validation failed
               if: env.ENABLE_KUBECONFORM == 'true' && steps.validate.outputs.failed == 'true'
