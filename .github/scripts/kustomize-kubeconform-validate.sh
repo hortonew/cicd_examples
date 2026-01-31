@@ -4,8 +4,8 @@ set -euo pipefail
 # Kubeconform Validation Script
 # Validates Kustomize manifests using kubeconform
 #
-# Usage: ./kubeconform-validate.sh <environments>
-# Example: ./kubeconform-validate.sh "dev staging prod"
+# Usage: ./kubeconform-validate.sh <environments> [overlays_path]
+# Example: ./kubeconform-validate.sh "dev staging prod" "configs/k8s/kustomize/overlays"
 #
 # Expects:
 #   - pr/ directory with PR branch checkout
@@ -15,14 +15,14 @@ set -euo pipefail
 #   - Sets 'failed=true' in GITHUB_OUTPUT if any validation fails
 
 ENVS="$1"
-KUSTOMIZE_PATH="${2:-configs/k8s/kustomize/overlays}"
+OVERLAYS_PATH="${2:-configs/k8s/kustomize/overlays}"
 
 VALIDATION=""
 VALIDATION_FAILED=false
 
 for env in $ENVS; do
     echo "Validating $env..."
-    OUTPUT=$(kubectl kustomize "pr/$KUSTOMIZE_PATH/$env" | kubeconform -summary -output json 2>&1) || true
+    OUTPUT=$(kubectl kustomize "pr/$OVERLAYS_PATH/$env" | kubeconform -summary -output json 2>&1) || true
 
     # Check for errors (statusInvalid or invalid)
     if echo "$OUTPUT" | grep -qiE '"status":\s*"(invalid|statusInvalid)"'; then

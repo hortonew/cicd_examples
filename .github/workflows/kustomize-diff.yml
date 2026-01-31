@@ -1,10 +1,14 @@
 name: Kustomize Diff
 
-# ============ TOGGLE ============
 env:
+    # Paths
+    KUSTOMIZE_ROOT: "configs/k8s/kustomize" # Root path containing base/ and overlays/
+    BASE_DIR: "base" # Name of base directory
+    OVERLAYS_DIR: "overlays" # Name of overlays directory
+
+    # Validation
     ENABLE_KUBECONFORM: "true" # Set to 'false' to disable validation
     KUBECONFORM_VERSION: "0.7.0"
-# ================================
 
 on:
     pull_request:
@@ -29,7 +33,7 @@ jobs:
               id: detect
               run: |
                   chmod +x .github/scripts/kustomize-detect-changes.sh
-                  .github/scripts/kustomize-detect-changes.sh configs/k8s/kustomize
+                  .github/scripts/kustomize-detect-changes.sh "$KUSTOMIZE_ROOT" "$BASE_DIR" "$OVERLAYS_DIR"
 
     diff:
         name: Kustomize Diff
@@ -69,13 +73,13 @@ jobs:
               id: validate
               run: |
                   chmod +x pr/.github/scripts/kustomize-kubeconform-validate.sh
-                  pr/.github/scripts/kustomize-kubeconform-validate.sh "${{ needs.detect-changes.outputs.environments }}"
+                  pr/.github/scripts/kustomize-kubeconform-validate.sh "${{ needs.detect-changes.outputs.environments }}" "$KUSTOMIZE_ROOT/$OVERLAYS_DIR"
 
             - name: Generate diffs
               id: diff
               run: |
                   chmod +x pr/.github/scripts/kustomize-diff.sh
-                  pr/.github/scripts/kustomize-diff.sh "${{ needs.detect-changes.outputs.environments }}"
+                  pr/.github/scripts/kustomize-diff.sh "${{ needs.detect-changes.outputs.environments }}" "$KUSTOMIZE_ROOT/$OVERLAYS_DIR"
 
             - name: Comment on PR
               uses: actions/github-script@v8

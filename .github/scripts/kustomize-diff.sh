@@ -2,10 +2,10 @@
 set -euo pipefail
 
 # Kustomize Diff Script
-# Generates diffs between main and PR branches with resource context
+# Generates diffs between main and PR branches
 #
-# Usage: ./kustomize-diff.sh <environments>
-# Example: ./kustomize-diff.sh "dev staging prod"
+# Usage: ./kustomize-diff.sh <environments> [overlays_path]
+# Example: ./kustomize-diff.sh "dev staging prod" "configs/k8s/kustomize/overlays"
 #
 # Expects:
 #   - main/ directory with main branch checkout
@@ -15,15 +15,15 @@ set -euo pipefail
 #   - diff_output.md with formatted diff for PR comment
 
 ENVS="$1"
-KUSTOMIZE_PATH="${2:-configs/k8s/kustomize/overlays}"
+OVERLAYS_PATH="${2:-configs/k8s/kustomize/overlays}"
 
 DIFF=""
 
 for env in $ENVS; do
     echo "Diffing $env..."
     
-    MAIN_OUTPUT=$(kubectl kustomize "main/$KUSTOMIZE_PATH/$env" 2>&1 || echo "Error building main")
-    PR_OUTPUT=$(kubectl kustomize "pr/$KUSTOMIZE_PATH/$env" 2>&1 || echo "Error building PR")
+    MAIN_OUTPUT=$(kubectl kustomize "main/$OVERLAYS_PATH/$env" 2>&1 || echo "Error building main")
+    PR_OUTPUT=$(kubectl kustomize "pr/$OVERLAYS_PATH/$env" 2>&1 || echo "Error building PR")
     
     # Write to temp files for git diff
     echo "$MAIN_OUTPUT" > /tmp/main.yaml
