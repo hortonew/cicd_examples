@@ -133,11 +133,12 @@ jobs:
                     ENV_DIFF=$(diff -u --label main --label pr <(echo "$MAIN_OUTPUT") <(echo "$PR_OUTPUT") || true)
 
                     if [ -n "$ENV_DIFF" ]; then
-                      # Count only actual changes (lines starting with + or - but not ++ or --)
-                      LINE_COUNT=$(echo "$ENV_DIFF" | grep -cE '^[+-][^+-]')
+                      # Count additions and removals separately
+                      ADDITIONS=$(echo "$ENV_DIFF" | grep -cE '^\+[^+]' || echo 0)
+                      REMOVALS=$(echo "$ENV_DIFF" | grep -cE '^-[^-]' || echo 0)
                       DIFF="$DIFF
                   <details>
-                  <summary><strong>$env</strong> ($LINE_COUNT lines changed)</summary>
+                  <summary><strong>$env</strong> (+$ADDITIONS, -$REMOVALS)</summary>
 
                   \`\`\`diff
                   $ENV_DIFF
