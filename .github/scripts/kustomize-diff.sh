@@ -25,9 +25,11 @@ for env in $ENVS; do
     MAIN_OUTPUT=$(kubectl kustomize "main/$KUSTOMIZE_PATH/$env" 2>&1 || echo "Error building main")
     PR_OUTPUT=$(kubectl kustomize "pr/$KUSTOMIZE_PATH/$env" 2>&1 || echo "Error building PR")
     
-    ENV_DIFF=$(diff -u --label main --label pr \
-        <(echo "$MAIN_OUTPUT") \
-        <(echo "$PR_OUTPUT") || true)
+    # Write to temp files for git diff
+    echo "$MAIN_OUTPUT" > /tmp/main.yaml
+    echo "$PR_OUTPUT" > /tmp/pr.yaml
+    
+    ENV_DIFF=$(git diff --no-index --no-color /tmp/main.yaml /tmp/pr.yaml 2>/dev/null | tail -n +5 || true)
     
     if [ -n "$ENV_DIFF" ]; then
         # Count additions and removals
