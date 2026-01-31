@@ -1,5 +1,10 @@
 name: Kustomize Diff
 
+# ============ TOGGLE ============
+env:
+    ENABLE_KUBECONFORM: "true" # Set to 'false' to disable validation
+# ================================
+
 on:
     pull_request:
         branches: [main]
@@ -66,6 +71,54 @@ jobs:
                   ref: main
                   path: main
 
+            - name: Install kubeconform
+              if: env.ENABLE_KUBECONFORM == 'true'
+              run: |
+                  curl -sSL https://github.com/yannh/kubeconform/releases/latest/download/kubeconform-linux-amd64.tar.gz | tar xz
+                  sudo mv kubeconform /usr/local/bin/
+
+            - name: Kubeconform Validate
+              if: env.ENABLE_KUBECONFORM == 'true'
+              id: validate
+              run: |
+                  ENVS="${{ needs.detect-changes.outputs.environments }}"
+                  VALIDATION=""
+                  VALIDATION_FAILED=false
+
+                  for env in $ENVS; do
+                    echo "Validating $env..."
+                    OUTPUT=$(kubectl kustomize pr/configs/k8s/kustomize/overlays/$env | kubeconform -summary -output json 2>&1) || true
+
+                    # Check for errors
+                    if echo "$OUTPUT" | grep -q '"status":"invalid"'; then
+                      VALIDATION_FAILED=true
+                      VALIDATION="$VALIDATION
+                  <details>
+                  <summary>❌ <strong>$env</strong> - validation failed</summary>
+
+                  \`\`\`json
+                  $OUTPUT
+                  \`\`\`
+
+                  </details>
+                  "
+                    else
+                      VALIDATION="$VALIDATION
+                  <details>
+                  <summary>✅ <strong>$env</strong> - valid</summary>
+
+                  \`\`\`json
+                  $OUTPUT
+                  \`\`\`
+
+                  </details>
+                  "
+                    fi
+                  done
+
+                  echo "$VALIDATION" > validation_output.md
+                  echo "failed=$VALIDATION_FAILED" >> $GITHUB_OUTPUT
+
             - name: Generate diffs
               id: diff
               run: |
@@ -78,7 +131,7 @@ jobs:
                     PR_OUTPUT=$(kubectl kustomize pr/configs/k8s/kustomize/overlays/$env 2>&1 || echo "Error building PR")
                     
                     ENV_DIFF=$(diff -u --label main --label pr <(echo "$MAIN_OUTPUT") <(echo "$PR_OUTPUT") || true)
-                    
+
                     if [ -n "$ENV_DIFF" ]; then
                       LINE_COUNT=$(echo "$ENV_DIFF" | wc -l)
                       DIFF="$DIFF
@@ -113,10 +166,20 @@ jobs:
                       const fs = require('fs');
                       const diff = fs.readFileSync('diff_output.md', 'utf8');
                       const envs = '${{ needs.detect-changes.outputs.environments }}'.split(' ').join(', ');
+                      const kubeconformEnabled = '${{ env.ENABLE_KUBECONFORM }}' === 'true';
+
+                      let validationSection = '';
+                      if (kubeconformEnabled) {
+                        const validation = fs.readFileSync('validation_output.md', 'utf8');
+                        const validationFailed = '${{ steps.validate.outputs.failed }}' === 'true';
+                        validationSection = `### Validation ${validationFailed ? '❌' : '✅'}\n\n${validation}\n\n`;
+                      }
 
                       const body = `## Kustomize Diff
 
                       Environments affected: \`${envs}\`
+
+                      ${validationSection}### Changes
 
                       ${diff}
                       `;
@@ -147,3 +210,9 @@ jobs:
                           body: body
                         });
                       }
+
+            - name: Fail if validation failed
+              if: env.ENABLE_KUBECONFORM == 'true' && steps.validate.outputs.failed == 'true'
+              run: |
+                  echo "❌ Manifest validation failed!"
+                  exit 1
