@@ -16,7 +16,7 @@ spec:
       - name: nginx
         image: nginx:1.29.4
         ports:
-        - containerPort: 8080
+        - containerPort: 80
         env:
         - name: ENVIRONMENT
           value: base
