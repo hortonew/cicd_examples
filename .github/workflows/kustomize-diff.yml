@@ -89,8 +89,8 @@ jobs:
                     echo "Validating $env..."
                     OUTPUT=$(kubectl kustomize pr/configs/k8s/kustomize/overlays/$env | kubeconform -summary -output json 2>&1) || true
 
-                    # Check for errors
-                    if echo "$OUTPUT" | grep -q '"status":"invalid"'; then
+                    # Check for errors (statusInvalid or invalid)
+                    if echo "$OUTPUT" | grep -qiE '"status":\s*"(invalid|statusInvalid)"'; then
                       VALIDATION_FAILED=true
                       VALIDATION="$VALIDATION
                   <details>
