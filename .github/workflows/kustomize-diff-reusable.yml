@@ -1,0 +1,21 @@
+name: Kustomize Diff Reusable
+
+on:
+    pull_request:
+        branches: [main]
+        paths:
+            - "configs/k8s/kustomize/**"
+
+permissions:
+    contents: read
+    pull-requests: write
+
+jobs:
+    kustomize-diff:
+        uses: hortonew/cicd_reusable/.github/workflows/reusable_kustomize_diff.yml@main
+        with:
+            kustomize_root: "configs/k8s/kustomize"
+            base_dir: "base"
+            overlays_dir: "overlays"
+            enable_kubeconform: true
+            kubeconform_version: "0.7.0"
